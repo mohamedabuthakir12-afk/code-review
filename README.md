@@ -119,18 +119,22 @@ on-prem guarantee intact: your code only ever gets built/run on your own
 machine, GitHub never touches your secrets or has a path into your
 network.
 
-One-time setup on the server you want to deploy to:
+One-time setup on the server you want to deploy to (the workflow targets a
+Windows self-hosted runner by default — `runs-on: [self-hosted, Windows]`;
+adjust the labels and the `Stage runtime secrets` step's path/shell in
+`deploy.yml` if your runner is Linux/macOS instead):
 
-1. Install Docker and Docker Compose.
+1. Install Docker Desktop (or Docker Engine + Compose).
 2. [Register a self-hosted runner](https://github.com/mohamedabuthakir12-afk/code-review/settings/actions/runners/new)
-   for this repo and install it as a service, so it's always listening.
+   for this repo and install it as a Windows service, so it's always
+   listening.
 3. Create a persistent secrets file **outside** the git checkout (the
    workflow copies this into place before each deploy — it never lives in
    the repo or passes through GitHub):
-   ```bash
-   sudo mkdir -p /opt/code-review-agent-secrets
-   sudo cp .env.example /opt/code-review-agent-secrets/.env
-   sudo nano /opt/code-review-agent-secrets/.env   # fill in real values
+   ```powershell
+   New-Item -ItemType Directory -Force -Path C:\code-review-agent-secrets
+   Copy-Item .env.example C:\code-review-agent-secrets\.env
+   notepad C:\code-review-agent-secrets\.env   # fill in real values
    ```
 
 After that, every push to `master` that passes the typecheck/build job

@@ -31,7 +31,7 @@ jobs:
     name: Deploy on-prem
     needs: test
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-    runs-on: [self-hosted]
+    runs-on: [self-hosted, Windows]
     environment: production
     steps:
       - uses: actions/checkout@v4
@@ -42,33 +42,37 @@ jobs:
       # LLM_* config) never go through this repo or GitHub's servers. They
       # live only on this runner's machine, outside the git checkout, and
       # get copied into the workspace right before `docker compose up`.
-      # One-time setup on the runner host:
-      #   mkdir -p /opt/code-review-agent-secrets
-      #   cp .env.example /opt/code-review-agent-secrets/.env
-      #   # then edit /opt/code-review-agent-secrets/.env with real values
+      # One-time setup on the runner host (PowerShell, as Administrator):
+      #   New-Item -ItemType Directory -Force -Path C:\code-review-agent-secrets
+      #   Copy-Item .env.example C:\code-review-agent-secrets\.env
+      #   notepad C:\code-review-agent-secrets\.env   # fill in real values
       - name: Stage runtime secrets
-        shell: bash
-        run: cp /opt/code-review-agent-secrets/.env .env
+        shell: powershell
+        run: Copy-Item "C:\code-review-agent-secrets\.env" ".env" -Force
 
       - name: Build and restart containers
-        shell: bash
+        shell: powershell
         run: docker compose up -d --build --remove-orphans
 
       - name: Wait for health check
-        shell: bash
+        shell: powershell
         run: |
-          for i in $(seq 1 30); do
-            if curl -fs "http://localhost:${PORT:-3000}/healthz" > /dev/null; then
-              echo "service healthy"
-              exit 0
-            fi
-            sleep 2
-          done
-          echo "service did not become healthy in time" >&2
+          $port = if ($env:PORT) { $env:PORT } else { "3000" }
+          for ($i = 0; $i -lt 30; $i++) {
+            try {
+              $resp = Invoke-WebRequest -Uri "http://localhost:$port/healthz" -UseBasicParsing -TimeoutSec 3
+              if ($resp.StatusCode -eq 200) {
+                Write-Host "service healthy"
+                exit 0
+              }
+            } catch {}
+            Start-Sleep -Seconds 2
+          }
+          Write-Error "service did not become healthy in time"
           docker compose logs --tail=100 app
           exit 1
 
       - name: Prune old images
         if: always()
-        shell: bash
+        shell: powershell
         run: docker image prune -f
