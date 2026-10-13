@@ -109,6 +109,35 @@ and the app, wired together — nothing external required. Uncomment the GPU
 block in `docker-compose.yml` if the host has an NVIDIA GPU; Ollama will
 run on CPU otherwise (much slower, fine for small models/low volume).
 
+### Continuous deployment (GitHub Actions)
+
+[`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) runs on
+every push: a `test` job (typecheck + build) on GitHub's own cloud runners,
+then a `deploy` job that only runs on a **self-hosted runner** — i.e. a
+GitHub Actions runner you install on your own server. This keeps the
+on-prem guarantee intact: your code only ever gets built/run on your own
+machine, GitHub never touches your secrets or has a path into your
+network.
+
+One-time setup on the server you want to deploy to:
+
+1. Install Docker and Docker Compose.
+2. [Register a self-hosted runner](https://github.com/mohamedabuthakir12-afk/code-review/settings/actions/runners/new)
+   for this repo and install it as a service, so it's always listening.
+3. Create a persistent secrets file **outside** the git checkout (the
+   workflow copies this into place before each deploy — it never lives in
+   the repo or passes through GitHub):
+   ```bash
+   sudo mkdir -p /opt/code-review-agent-secrets
+   sudo cp .env.example /opt/code-review-agent-secrets/.env
+   sudo nano /opt/code-review-agent-secrets/.env   # fill in real values
+   ```
+
+After that, every push to `master` that passes the typecheck/build job
+automatically rebuilds the Docker image and restarts the containers on
+that server, then verifies `/healthz` before finishing. Trigger it manually
+anytime from the Actions tab (`workflow_dispatch`) too.
+
 ### Testing without a real PR
 
 `src/devtools/dryRun.ts` runs the exact same pipeline (static analysis +

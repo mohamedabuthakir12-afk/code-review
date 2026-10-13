@@ -1,0 +1,74 @@
+name: Build, test, and deploy
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: Typecheck & build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "npm"
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+
+  deploy:
+    name: Deploy on-prem
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: [self-hosted]
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          clean: true
+
+      # The real secrets (.env with GITHUB_TOKEN, GITHUB_WEBHOOK_SECRET,
+      # LLM_* config) never go through this repo or GitHub's servers. They
+      # live only on this runner's machine, outside the git checkout, and
+      # get copied into the workspace right before `docker compose up`.
+      # One-time setup on the runner host:
+      #   mkdir -p /opt/code-review-agent-secrets
+      #   cp .env.example /opt/code-review-agent-secrets/.env
+      #   # then edit /opt/code-review-agent-secrets/.env with real values
+      - name: Stage runtime secrets
+        shell: bash
+        run: cp /opt/code-review-agent-secrets/.env .env
+
+      - name: Build and restart containers
+        shell: bash
+        run: docker compose up -d --build --remove-orphans
+
+      - name: Wait for health check
+        shell: bash
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fs "http://localhost:${PORT:-3000}/healthz" > /dev/null; then
+              echo "service healthy"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "service did not become healthy in time" >&2
+          docker compose logs --tail=100 app
+          exit 1
+
+      - name: Prune old images
+        if: always()
+        shell: bash
+        run: docker image prune -f
