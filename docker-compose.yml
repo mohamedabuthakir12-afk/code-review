@@ -1,0 +1,33 @@
+services:
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama-data:/root/.ollama
+      - ./docker/ollama-entrypoint.sh:/ollama-entrypoint.sh
+    entrypoint: ["sh", "/ollama-entrypoint.sh"]
+    environment:
+      OLLAMA_MODEL: ${LLM_MODEL:-qwen2.5-coder:14b}
+    ports:
+      - "11434:11434"
+    # Uncomment to use an NVIDIA GPU on the host:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+  app:
+    build: .
+    depends_on:
+      - ollama
+    env_file:
+      - .env
+    environment:
+      LLM_BASE_URL: http://ollama:11434/v1
+    ports:
+      - "${PORT:-3000}:3000"
+
+volumes:
+  ollama-data:
